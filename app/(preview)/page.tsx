@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { experimental_useObject } from "ai/react";
-import { questionsSchema } from "@/lib/schemas";
+import {
+  questionsSchema,
+  writtenQuestionsSchema,
+  flashcardsSchema,
+} from "@/lib/schemas";
 import { z } from "zod";
 import { toast } from "sonner";
 import { FileUp, Plus, Loader2 } from "lucide-react";
@@ -16,20 +20,23 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import Quiz from "@/components/quiz";
 import { Link } from "@/components/ui/link";
-import NextLink from "next/link";
 import { generateQuizTitle } from "./actions";
 import { AnimatePresence, motion } from "framer-motion";
-import { VercelIcon, GitIcon } from "@/components/icons";
+import { LearningMode } from "@/lib/types";
+import ModeSelector from "@/components/mode-selector";
+import QuizContent from "@/components/quizContent";
 
 export default function ChatWithFiles() {
   const [files, setFiles] = useState<File[]>([]);
-  const [questions, setQuestions] = useState<z.infer<typeof questionsSchema>>(
-    [],
-  );
+  const [questions, setQuestions] = useState<
+    | z.infer<typeof questionsSchema>
+    | z.infer<typeof writtenQuestionsSchema>
+    | z.infer<typeof flashcardsSchema>
+  >([]);
   const [isDragging, setIsDragging] = useState(false);
   const [title, setTitle] = useState<string>();
+  const [mode, setMode] = useState<LearningMode>("choose");
 
   const {
     submit,
@@ -37,7 +44,12 @@ export default function ChatWithFiles() {
     isLoading,
   } = experimental_useObject({
     api: "/api/generate-quiz",
-    schema: questionsSchema,
+    schema:
+      mode === "choose"
+        ? questionsSchema
+        : mode === "quiz"
+        ? writtenQuestionsSchema
+        : flashcardsSchema,
     initialValue: undefined,
     onError: (error) => {
       toast.error("Failed to generate quiz. Please try again.");
@@ -53,14 +65,14 @@ export default function ChatWithFiles() {
 
     if (isSafari && isDragging) {
       toast.error(
-        "Safari does not support drag & drop. Please use the file picker.",
+        "Safari does not support drag & drop. Please use the file picker."
       );
       return;
     }
 
     const selectedFiles = Array.from(e.target.files || []);
     const validFiles = selectedFiles.filter(
-      (file) => file.type === "application/pdf" && file.size <= 5 * 1024 * 1024,
+      (file) => file.type === "application/pdf" && file.size <= 5 * 1024 * 1024
     );
     console.log(validFiles);
 
@@ -87,9 +99,9 @@ export default function ChatWithFiles() {
         name: file.name,
         type: file.type,
         data: await encodeFileAsBase64(file),
-      })),
+      }))
     );
-    submit({ files: encodedFiles });
+    submit({ files: encodedFiles, mode });
     const generatedTitle = await generateQuizTitle(encodedFiles[0].name);
     setTitle(generatedTitle);
   };
@@ -101,15 +113,16 @@ export default function ChatWithFiles() {
 
   const progress = partialQuestions ? (partialQuestions.length / 4) * 100 : 0;
 
-  if (questions.length === 4) {
-    return (
-      <Quiz title={title ?? "Quiz"} questions={questions} clearPDF={clearPDF} />
-    );
-  }
-
-  return (
+  return questions.length === 4 ? (
+    <QuizContent
+      mode={mode}
+      title={title}
+      questions={questions}
+      clearPDF={clearPDF}
+    />
+  ) : (
     <div
-      className="min-h-[100dvh] w-full flex justify-center"
+      className="min-h-[100dvh] w-full flex flex-col justify-center items-center"
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -141,6 +154,7 @@ export default function ChatWithFiles() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ModeSelector selectedMode={mode} onModeSelect={setMode} />
       <Card className="w-full max-w-md h-full border-0 sm:border sm:h-fit mt-12">
         <CardHeader className="text-center space-y-6">
           <div className="mx-auto flex items-center justify-center space-x-2 text-muted-foreground">
@@ -230,29 +244,6 @@ export default function ChatWithFiles() {
           </CardFooter>
         )}
       </Card>
-      <motion.div
-        className="flex flex-row gap-4 items-center justify-between fixed bottom-6 text-xs "
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-      >
-        <NextLink
-          target="_blank"
-          href="https://github.com/vercel-labs/ai-sdk-preview-pdf-support"
-          className="flex flex-row gap-2 items-center border px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
-        >
-          <GitIcon />
-          View Source Code
-        </NextLink>
-
-        <NextLink
-          target="_blank"
-          href="https://vercel.com/templates/next.js/ai-quiz-generator"
-          className="flex flex-row gap-2 items-center bg-zinc-900 px-2 py-1.5 rounded-md text-zinc-50 hover:bg-zinc-950 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-50"
-        >
-          <VercelIcon size={14} />
-          Deploy with Vercel
-        </NextLink>
-      </motion.div>
     </div>
   );
 }
